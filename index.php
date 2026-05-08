@@ -84,6 +84,7 @@ function toonSpelPagina($galgTekening, $woordWeergave, $geradenLetters) {
         <html>
         <head>
             <title>Galgje</title>
+            <link rel="stylesheet" href="style.css">
         </head>
         <body>
 
