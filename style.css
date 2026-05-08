@@ -1,6 +1,5 @@
 body {
-    font-family: Arial, sans-serif;
-    background-color: #f4f4f4;
+    background-color: burlywood;
     text-align: center;
     padding: 30px;
     color: #333;
@@ -17,8 +16,6 @@ pre {
     padding: 25px;
     border: 2px solid #ccc;
     border-radius: 12px;
-
-    font-family: "Courier New", monospace;
     font-size: 24px;
     line-height: 1.2;
     text-align: left;
@@ -44,14 +41,14 @@ input[type="submit"] {
     font-size: 24px;
     border: none;
     border-radius: 10px;
-    background-color: #4CAF50;
-    color: white;
+    background-color: #ffffff;
+    color: rgb(0, 0, 0);
     cursor: pointer;
     margin-left: 10px;
 }
 
 input[type="submit"]:hover {
-    background-color: #45a049;
+    background-color: beige;
 }
 
 a {
@@ -63,8 +60,4 @@ a {
     text-decoration: none;
     border-radius: 10px;
     font-size: 20px;
-}
-
-a:hover {
-    background-color: #1976d2;
 }
