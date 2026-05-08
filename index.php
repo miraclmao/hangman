@@ -1,192 +1,213 @@
 <?php
 
+// Start het geheugen van de server (onthoudt het woord, fouten, etc.)
 session_start();
+
+// Laad de ASCII-tekeningen van de galg (opgeslagen in $hang[0] t/m $hang[6])
 require_once 'hangedman.php';
 
-// ─── Database ────────────────────────────────────────────────────────────────
+// Maak verbinding met de database
+$db = new mysqli("localhost", "root", "", "galgje");
 
-$conn = new mysqli("localhost", "root", "", "galgje");
-
-if ($conn->connect_error) {
-    die("Database connection failed");
+// Stop het script als de verbinding mislukt
+if ($db->connect_error) {
+    die("Kan geen verbinding maken met de database.");
 }
 
-// ─── Spellogica ──────────────────────────────────────────────────────────────
+// ============================================================
+// STAP 1: Haalt een willekeurig woord op uit de database
+// ============================================================
 
-/**
- * Haalt een willekeurig woord op uit de database (altijd hoofdletters).
- */
-function getRandomWord(mysqli $conn): string
-{
-    $result = $conn->query("SELECT woord FROM woorden ORDER BY RAND() LIMIT 1");
+function haalWillekeurigWoord($db) {
 
-    if ($result && $result->num_rows > 0) {
-        return strtoupper($result->fetch_assoc()['woord']);
+    // Vraag een willekeurig woord op
+    $resultaat = $db->query("SELECT woord FROM woorden ORDER BY RAND() LIMIT 1");
+
+    // Als er een woord gevonden is, geef het terug in hoofdletters
+    if ($resultaat && $resultaat->num_rows > 0) {
+        $rij = $resultaat->fetch_assoc();
+        return strtoupper($rij['woord']);
     }
 
-    return "ERROR";
+    // Als er iets mis ging, geef een foutwoord terug
+    return "FOUT";
 }
 
-/**
- * Bouwt het weergavepatroon van het woord.
- * Geraadde letters worden getoond, de rest als underscore.
- * Voorbeeld: "_ A _ G _ E"
- */
-function buildWordDisplay(string $word, string $guessedLetters): string
-{
-    $display = '';
+// ============================================================
+// STAP 2: Bouw de weergave van het woord
+// Voorbeeld: woord = "GALGJE", geraden = "GA"
+// Resultaat: "G A _ G _ _"
+// ============================================================
 
-    for ($i = 0; $i < strlen($word); $i++) {
-        $letter = $word[$i];
-        $display .= str_contains($guessedLetters, $letter) ? "$letter " : '_ ';
+function maakWoordWeergave($woord, $geradenLetters) {
+
+    $weergave = '';
+
+    // Loop door elke letter van het woord
+    for ($i = 0; $i < strlen($woord); $i++) {
+        $letter = $woord[$i];
+
+        // Als de letter al geraden is, toon hem — anders een underscore
+        if (str_contains($geradenLetters, $letter)) {
+            $weergave .= $letter . ' ';
+        } else {
+            $weergave .= '_ ';
+        }
     }
 
-    return trim($display);
+    // Verwijder de spatie aan het einde en geef het terug
+    return trim($weergave);
 }
 
-/**
- * Controleert of het woord volledig geraden is.
- */
-function wordIsComplete(string $display): bool
-{
-    return !str_contains($display, '_');
+// ============================================================
+// STAP 3: Controleer of het woord volledig geraden is
+// ============================================================
+
+function woordIsKlaar($weergave) {
+    // Als er geen underscore meer in zit, is het woord geraden
+    return !str_contains($weergave, '_');
 }
 
-// ─── Sessiebeheer ────────────────────────────────────────────────────────────
+// ============================================================
+// STAP 4: Toon de spelpagina (galg + woord + invoerveld)
+// ============================================================
 
-function startNewGame(mysqli $conn): void
-{
-    $_SESSION['word']    = getRandomWord($conn);
-    $_SESSION['wrong']   = 0;
-    $_SESSION['guessed'] = '';
-}
+function toonSpelPagina($galgTekening, $woordWeergave, $geradenLetters) {
 
-function getSessionWord(): string    { return $_SESSION['word']    ?? ''; }
-function getWrongCount(): int        { return $_SESSION['wrong']   ?? 0;  }
-function getGuessedLetters(): string { return $_SESSION['guessed'] ?? ''; }
+    // Beveilig de tekst zodat er geen gevaarlijke code in de pagina terechtkomt
+    $veiligWoord   = htmlspecialchars($woordWeergave,  ENT_QUOTES, 'UTF-8');
+    $veiligGeraden = htmlspecialchars($geradenLetters, ENT_QUOTES, 'UTF-8');
 
-function saveSessionState(int $wrongCount, string $guessedLetters): void
-{
-    $_SESSION['wrong']   = $wrongCount;
-    $_SESSION['guessed'] = $guessedLetters;
-}
-
-// ─── HTML ────────────────────────────────────────────────────────────
-
-/**
- * Toont de hoofdpagina van het spel (galg, woord, geraden letters, formulier).
- */
-function printGamePage(string $gallowsImage, string $wordDisplay, string $guessedLetters): void
-{
-    $safeDisplay  = htmlspecialchars($wordDisplay,     ENT_QUOTES, 'UTF-8');
-    $safeGuessed  = htmlspecialchars($guessedLetters,  ENT_QUOTES, 'UTF-8');
-
+    // Stuur de HTML-pagina naar de browser
     echo <<<HTML
         <!DOCTYPE html>
         <html>
         <head>
-            <title>Hangman</title>
+            <title>Galgje</title>
         </head>
         <body>
 
-        <div class="container">
+        <h1>Galgje</h1>
 
-            <h1>Hangman Game</h1>
+        <pre>$galgTekening</pre>
 
-            <pre>$gallowsImage</pre>
+        <p><strong>Woord:</strong> $veiligWoord</p>
 
-            <p><strong>Word:</strong> $safeDisplay</p>
+        <p><strong>Geraden letters:</strong> $veiligGeraden</p>
 
-            <p><strong>Guessed letters:</strong> $safeGuessed</p>
-
-            <form method="post">
-                <input type="text" name="letter" maxlength="1" required autofocus>
-                <input type="submit" value="Guess">
-            </form>
-
-        </div>
+        <form method="post">
+            <input type="text" name="letter" maxlength="1" required autofocus>
+            <input type="submit" value="Raad">
+        </form>
 
         </body>
         </html>
         HTML;
 }
 
-/**
- * Toont het eindscherm (gewonnen of verloren) met een herstart-link.
- */
-function printEndScreen(string $outcome, string $word): void
-{
-    $safeWord = htmlspecialchars($word, ENT_QUOTES, 'UTF-8');
+// ============================================================
+// STAP 5: Toon het eindscherm (gewonnen of verloren)
+// ============================================================
 
-    echo "<h1>$outcome</h1>";
-    echo "<p>The word was: <strong>$safeWord</strong></p>";
-    echo '<a href="">Play again</a>';
+function toonEindscherm($bericht, $woord) {
+
+    $veiligWoord = htmlspecialchars($woord, ENT_QUOTES, 'UTF-8');
+
+    echo "<h1>$bericht</h1>";
+    echo "<p>Het woord was: <strong>$veiligWoord</strong></p>";
+    echo '<a href="">Opnieuw spelen</a>';
 }
 
-// ─── Spelverloop ─────────────────────────────────────────────────────────────
+// ============================================================
+// STAP 6: Verwerk een raadbeurt
+// ============================================================
 
-/**
- * Verwerkt een ingevoerde letter en werkt de spelstaat bij.
- */
-function handleGuess(): void
-{
+function verwerkRaadbeurt() {
+
+    // $hang komt uit hangedman.php (de galgplaatjes)
     global $hang;
 
-    $word           = getSessionWord();
-    $wrongCount     = getWrongCount();
-    $guessedLetters = getGuessedLetters();
+    // Haal de huidige spelstaat op uit het geheugen
+    $woord          = $_SESSION['woord']   ?? '';
+    $aantalFouten   = $_SESSION['fouten']  ?? 0;
+    $geradenLetters = $_SESSION['geraden'] ?? '';
 
-    // Valideer invoer
-    $rawInput = $_POST['letter'] ?? '';
-    if (!preg_match('/^[a-zA-Z]$/', $rawInput)) {
-        die('Invalid input');
+    // Lees de ingevoerde letter uit het formulier
+    $invoer = $_POST['letter'] ?? '';
+
+    // Controleer of het één letter is (geen cijfers, geen rare tekens)
+    if (!preg_match('/^[a-zA-Z]$/', $invoer)) {
+        die('Ongeldige invoer. Voer één letter in.');
     }
 
-    $letter = strtoupper($rawInput);
+    // Zet de letter om naar hoofdletter zodat de vergelijking klopt
+    $letter = strtoupper($invoer);
 
-    // Voeg letter toe als die nog niet geraden was
-    $isNewGuess = !str_contains($guessedLetters, $letter);
-    if ($isNewGuess) {
-        $guessedLetters .= $letter;
+    // Alleen verwerken als de letter nog niet eerder geraden was
+    $isNieuweGok = !str_contains($geradenLetters, $letter);
 
-        $isWrongGuess = !str_contains($word, $letter);
-        if ($isWrongGuess) {
-            $wrongCount++;
+    if ($isNieuweGok) {
+
+        // Voeg de letter toe aan de geraden letters
+        $geradenLetters .= $letter;
+
+        // Als de letter niet in het woord zit, is het een fout
+        $isFout = !str_contains($woord, $letter);
+        if ($isFout) {
+            $aantalFouten++;
         }
     }
 
-    saveSessionState($wrongCount, $guessedLetters);
+    // Sla de nieuwe spelstaat op in het geheugen
+    $_SESSION['fouten']  = $aantalFouten;
+    $_SESSION['geraden'] = $geradenLetters;
 
-    $wordDisplay = buildWordDisplay($word, $guessedLetters);
+    // Bouw de weergave van het woord opnieuw op
+    $woordWeergave = maakWoordWeergave($woord, $geradenLetters);
 
-    // Gewonnen
-    if (wordIsComplete($wordDisplay)) {
-        printEndScreen('You Win!', $word);
+    // Gewonnen? Stop het spel en toon de winnaarspagina
+    if (woordIsKlaar($woordWeergave)) {
+        toonEindscherm('Je hebt gewonnen!', $woord);
         session_destroy();
         return;
     }
 
-    // Verloren
-    if ($wrongCount >= 6) {
-        printEndScreen('You Lost!', $word);
+    // Verloren? (6 fouten = galg is compleet)
+    if ($aantalFouten >= 6) {
+        toonEindscherm('Je hebt verloren.', $woord);
         session_destroy();
         return;
     }
 
-    // Spel gaat verder
-    printGamePage($hang[$wrongCount], $wordDisplay, $guessedLetters);
+    // Spel gaat verder — toon de bijgewerkte pagina
+    toonSpelPagina($hang[$aantalFouten], $woordWeergave, $geradenLetters);
 }
 
-// ─── Startpunt ───────────────────────────────────────────────────────────────
+// ============================================================
+// STARTPUNT: Nieuw spel of raadbeurt?
+// ============================================================
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-    handleGuess();
-} else {
-    startNewGame($conn);
 
-    $word        = getSessionWord();
-    $emptyDisplay = trim(str_repeat('_ ', strlen($word)));
-    printGamePage($hang[0], $emptyDisplay, '');
+    // De speler heeft een letter ingevoerd — verwerk de gok
+    verwerkRaadbeurt();
+
+} else {
+
+    // De pagina wordt voor het eerst geopend — start een nieuw spel
+
+    // Kies een woord en sla alles op in het geheugen
+    $_SESSION['woord']   = haalWillekeurigWoord($db);
+    $_SESSION['fouten']  = 0;
+    $_SESSION['geraden'] = '';
+
+    // Maak een beginweergave met alleen underscores (bijv. "_ _ _ _ _ _")
+    $woord         = $_SESSION['woord'];
+    $beginWeergave = trim(str_repeat('_ ', strlen($woord)));
+
+    // Toon de eerste pagina
+    toonSpelPagina($hang[0], $beginWeergave, '');
 }
 
-$conn->close();
+// Sluit de databaseverbinding netjes af
+$db->close();
