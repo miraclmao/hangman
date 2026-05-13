@@ -6,35 +6,30 @@ require_once 'hangedman.php';
 $db = new mysqli("localhost", "root", "", "galgje");
 if ($db->connect_error) die("Kan geen verbinding maken met de database.");
 
-// ── Hulpfuncties ──────────────────────────────────────────────────
-
 // Kiest een willekeurig woord uit de database
-function randomWord($db) {
-    $row = $db->query("SELECT woord FROM woorden ORDER BY RAND() LIMIT 1")->fetch_assoc();
-    return strtoupper($row['woord'] ?? 'FOUT');
+function willekeurigWoord($db) {
+    $rij = $db->query("SELECT woord FROM woorden ORDER BY RAND() LIMIT 1")->fetch_assoc();
+    return strtoupper($rij['woord']);
 }
 
-// Bouwt de weergave van het woord: letters die geraden zijn worden getoond,
-// de rest wordt vervangen door een underscore (_)
-function buildDisplay($word, $guessed) {
+// Toont het woord met underscores voor nog niet geraden letters
+function bouwWeergave($woord, $geraden) {
     return trim(implode(' ', array_map(
-        fn($l) => str_contains($guessed, $l) ? $l : '_',
-        str_split($word)
+        fn($letter) => str_contains($geraden, $letter) ? $letter : '_',
+        str_split($woord)
     )));
 }
 
 // Toont de spelpagina met de galg, het woord en de geraden letters
-function gamePage($gallows, $display, $guessed) {
-    $d = htmlspecialchars($display,  ENT_QUOTES, 'UTF-8');
-    $g = htmlspecialchars($guessed, ENT_QUOTES, 'UTF-8');
+function spelPagina($galg, $weergave, $geraden) {
     echo <<<HTML
         <!DOCTYPE html><html>
         <head><title>Galgje</title><link rel="stylesheet" href="style.css"></head>
         <body>
         <h1>Galgje</h1>
-        <pre>$gallows</pre>
-        <p><strong>Woord:</strong> $d</p>
-        <p><strong>Geraden letters:</strong> $g</p>
+        <pre>$galg</pre>
+        <p><strong>Woord:</strong> $weergave</p>
+        <p><strong>Geraden letters:</strong> $geraden</p>
         <form method="post">
             <input type="text" name="letter" maxlength="1" required autofocus>
             <input type="submit" value="Raad">
@@ -43,62 +38,52 @@ function gamePage($gallows, $display, $guessed) {
         HTML;
 }
 
-// Toont de eindpagina met een bericht (gewonnen of verloren) en het juiste woord
-function endPage($message, $word) {
-    $w = htmlspecialchars($word, ENT_QUOTES, 'UTF-8');
-    echo "<h1>$message</h1><p>Het woord was: <strong>$w</strong></p><a href=''>Opnieuw spelen</a>";
+// Toont de eindpagina met of de speler gewonnen of verloren heeft
+function eindPagina($bericht, $woord) {
+    echo "<h1>$bericht</h1><p>Het woord was: <strong>$woord</strong></p><a href=''>Opnieuw spelen</a>";
 }
 
-// ── Nieuw spel starten ──────────────────────────────────────────────────────
-
-// Als er geen formulier verstuurd is, start een nieuw spel
+// Als de pagina voor het eerst geladen wordt, start een nieuw spel
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    // Sla een nieuw woord, 0 fouten en lege geraden letters op in de sessie
-    $_SESSION = ['woord' => randomWord($db), 'fouten' => 0, 'geraden' => ''];
-    // Toon de beginpagina met een lege galg en underscores voor het woord
-    gamePage($hang[0], str_repeat('_ ', strlen($_SESSION['woord'])), '');
+    // Sla het woord, aantal fouten en geraden letters op in de sessie
+    $_SESSION = ['woord' => willekeurigWoord($db), 'fouten' => 0, 'geraden' => ''];
+    spelPagina($hang[0], str_repeat('_', strlen($_SESSION['woord'])), '');
     $db->close();
     exit;
 }
 
-// ── Verwerken van de geraden letter ─────────────────────────────────────────
-
 global $hang;
 
 // Haal de spelgegevens op uit de sessie
-['woord' => $word, 'fouten' => $errors, 'geraden' => $guessed] = $_SESSION;
+['woord' => $woord, 'fouten' => $fouten, 'geraden' => $geraden] = $_SESSION;
 
-// Lees de ingevoerde letter in en controleer of het een geldige letter is
-$input = $_POST['letter'] ?? '';
-if (!preg_match('/^[a-zA-Z]$/', $input)) die('Ongeldige invoer.');
+// Zet de ingevoerde letter om naar hoofdletter
+$letter = strtoupper($_POST['letter']);
 
-// Zet de letter om naar hoofdletter zodat vergelijking altijd klopt
-$letter = strtoupper($input);
-
-// Voeg de letter toe als die nog niet geraden is
-if (!str_contains($guessed, $letter)) {
-    $guessed .= $letter;
-    // Als de letter niet in het woord zit, telt het als een fout
-    if (!str_contains($word, $letter)) $errors++;
+// Voeg de letter toe als die nog niet eerder geraden is
+if (!str_contains($geraden, $letter)) {
+    $geraden .= $letter;
+    // Fout als de letter niet in het woord zit
+    if (!str_contains($woord, $letter)) $fouten++;
 }
 
 // Sla de bijgewerkte spelgegevens op in de sessie
-$_SESSION = ['woord' => $word, 'fouten' => $errors, 'geraden' => $guessed];
+$_SESSION = ['woord' => $woord, 'fouten' => $fouten, 'geraden' => $geraden];
 
-// Maak de weergave van het woord met de tot nu toe geraden letters
-$display = buildDisplay($word, $guessed);
+// Bouw de weergave van het woord met de geraden letters
+$weergave = bouwWeergave($woord, $geraden);
 
-// Controleer of de speler gewonnen heeft (geen underscores meer over)
-if (!str_contains($display, '_')) {
-    endPage('Je hebt gewonnen!', $word);
-    session_destroy(); // Sessie verwijderen na afloop van het spel
-// Controleer of de speler verloren heeft (6 fouten gemaakt)
-} elseif ($errors >= 6) {
-    endPage('Je hebt verloren.', $word);
-    session_destroy(); // Sessie verwijderen na afloop van het spel
-// Anders: spel gaat door, toon de bijgewerkte spelpagina
+// Gewonnen: geen underscores meer over
+if (!str_contains($weergave, '_')) {
+    eindPagina('Je hebt gewonnen!', $woord);
+    session_destroy();
+// Verloren: 6 fouten gemaakt
+} elseif ($fouten >= 6) {
+    eindPagina('Je hebt verloren.', $woord);
+    session_destroy();
+// Spel gaat verder
 } else {
-    gamePage($hang[$errors], $display, $guessed);
+    spelPagina($hang[$fouten], $weergave, $geraden);
 }
 
 // Sluit de databaseverbinding
